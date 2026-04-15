@@ -5,7 +5,7 @@ metadata:
   labels:
     app: vue-minesweeper
 spec:
-  replicas: 2 # 启动两个 Pod 副本
+  replicas: 2 # 启动两个 Pod 副本2
   selector:
     matchLabels:
       app: vue-minesweeper
