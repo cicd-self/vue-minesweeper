@@ -1,40 +1,52 @@
 name: CI - Build and Deploy
+
 on:
   push:
     branches: [main]
     paths-ignore:
-      - 'k8s/kustomization.yaml' # 修改 1：忽略 k8s 目录下的清单
+      - 'k8s/kustomization.yaml'
   pull_request:
     branches: [main]
+
+# Fix #1: Prevent concurrent runs on the same branch to avoid race conditions
+# on kustomization.yaml commits triggering a new pipeline run
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
   build-and-push:
-    runs-on: arc-runner-set # 使用 GitHub 免费的标准机器即可
+    runs-on: arc-runner-set
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set lowercase image name
         run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
+          # Fix #2: Use a dedicated GHCR_TOKEN only for registry auth (packages scope)
           password: ${{ secrets.GHCR_TOKEN }}
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: type=sha,prefix=,format=short
+
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6  # Fix #3: Upgraded from v5 to v6
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
@@ -51,31 +63,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GHCR_TOKEN }}
+          # Fix #4: Use GITHUB_TOKEN (built-in) for git push instead of GHCR_TOKEN.
+          # GHCR_TOKEN is scoped for container registry, not repo write access.
+          # GITHUB_TOKEN already has contents: write declared above.
+          token: ${{ secrets.GITHUB_TOKEN }}
           ref: main
           fetch-depth: 0
+
       - name: Set lowercase image name
         run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      # Fix #5: Use the official action for a pinned, stable Kustomize install
+      # instead of curl-piping to bash (fragile + security risk)
       - name: Install Kustomize
-        run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: "5.4.3"
+
       - name: Update image tag with Kustomize
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           FULL_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          
-          cd k8s # 修改 2：进入 k8s 目录
-          kustomize edit set image frontend=${FULL_IMAGE}:${SHORT_SHA} # 瞄准 frontend 靶子
-          
+          cd k8s
+          kustomize edit set image frontend=${FULL_IMAGE}:${SHORT_SHA}
+
       - name: Commit and push
         run: |
           git config user.email "ci-bot@github.com"
           git config user.name "CI Bot"
-          git add k8s/kustomization.yaml # 修改 3：提交 k8s 目录的变动
+          git add k8s/kustomization.yaml
           if ! git diff --staged --quiet; then
             git commit -m "ci: update frontend image tag to $(echo ${{ github.sha }} | cut -c1-7) [skip ci]"
-            git pull --rebase origin main
+            # Fix #6: Fail explicitly if rebase has conflicts instead of silently continuing
+            git pull --rebase origin main || (echo "Rebase conflict, aborting." && exit 1)
             git push origin main
           else
             echo "No changes detected, skipping commit."
