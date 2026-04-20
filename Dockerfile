@@ -4,7 +4,6 @@ WORKDIR /app
 
 # 启用 pnpm
 RUN corepack enable
-RUN corepack prepare pnpm@latest --activate
 
 # 安装依赖
 COPY package.json pnpm-lock.yaml ./
