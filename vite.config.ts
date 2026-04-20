@@ -26,7 +26,6 @@ export default defineConfig({
     AutoImport({
       imports: [
         'vue',
-        'vue/macros',
         'vue-router',
         '@vueuse/core',
       ],
