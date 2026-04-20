@@ -10,4 +10,3 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
-      nodePort: 30080 # 部署后可通过 http://<K8s节点IP>:30080 访问扫雷游戏
