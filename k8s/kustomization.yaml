@@ -7,4 +7,4 @@ resources:
 images:
 - name: frontend
   newName: ghcr.io/cicd-self/vue-minesweeper
-  newTag: 3e845ce
+  newTag: 172808c
