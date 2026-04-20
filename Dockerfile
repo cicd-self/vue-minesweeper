@@ -2,8 +2,9 @@
 FROM node:18-alpine AS builder
 WORKDIR /app
 
-# 启用 pnpm
-RUN corepack enable
+# 安装 pnpm 并配置 npm 镜像源
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install -g pnpm@6
 
 # 安装依赖
 COPY package.json pnpm-lock.yaml ./
